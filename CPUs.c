@@ -250,7 +250,6 @@ void* SRTFcpu(void* param) {
     SharedVars* svars = ((CpuParams*) param)->svars;
 
     Process* p = NULL;  // TODO: uncomment when you implement this function
-    // printf("%d", (*p).burstRemaining);
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
 
@@ -260,13 +259,14 @@ void* SRTFcpu(void* param) {
         // check value of BR before going into null, replace (what?) if arriving BR is less than what we currently have
         // insert process with lower BR then remove old -> how do I get index of current process to remove it b/c it has higher BR?
         // qShortest gets index of shortest burst but I need index of the current process. 
-        if(qShortestBR(&(svars->readyQ)) <= p->burstRemaining && p != NULL){
+        if(p != NULL && qShortestBR(&(svars->readyQ)) <= p->burstRemaining){
             pthread_mutex_lock(&(svars->readyQLock));
 
             p->requeued = true;
             qInsert(&(svars->readyQ), p);
-            qRemove(&(svars->readyQ), qShortest(&(svars->readyQ))); // how do i get the index of the CURRENT process to remove it?
-        
+            p = qRemove(&(svars->readyQ), qShortest(&(svars->readyQ))); 
+            // what var needs to hold the new shortest? 
+
             pthread_mutex_unlock(&(svars->readyQLock));
         }
 
