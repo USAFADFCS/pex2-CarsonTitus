@@ -260,15 +260,15 @@ void* SRTFcpu(void* param) {
         // check value of BR before going into null, replace (what?) if arriving BR is less than what we currently have
         // insert process with lower BR then remove old -> how do I get index of current process to remove it b/c it has higher BR?
         // qShortest gets index of shortest burst but I need index of the current process. 
-        // if(qShortestBR(&(svars->readyQ)) <= p->burstRemaining){
-        //     pthread_mutex_lock(&(svars->readyQLock));
+        if(qShortestBR(&(svars->readyQ)) <= p->burstRemaining && p != NULL){
+            pthread_mutex_lock(&(svars->readyQLock));
 
-        //     p->requeued = true;
-        //     qInsert(&(svars->readyQ), p);
-        //     qRemove(&(svars->readyQ), qShortest(&(svars->readyQ))); // how do i get the index of the CURRENT process to remove it?
+            p->requeued = true;
+            qInsert(&(svars->readyQ), p);
+            qRemove(&(svars->readyQ), qShortest(&(svars->readyQ))); // how do i get the index of the CURRENT process to remove it?
         
-        //     pthread_mutex_unlock(&(svars->readyQLock));
-        // }
+            pthread_mutex_unlock(&(svars->readyQLock));
+        }
 
         // ── Selection (only when idle) ───────────────────────────────────
         // We only enter this block when the CPU has nothing to run.
@@ -308,15 +308,15 @@ void* SRTFcpu(void* param) {
             }
         }
 
-        if(qShortestBR(&(svars->readyQ)) <= p->burstRemaining){
-            pthread_mutex_lock(&(svars->readyQLock));
+        // if(qShortestBR(&(svars->readyQ)) <= p->burstRemaining){
+        //     pthread_mutex_lock(&(svars->readyQLock));
 
-            p->requeued = true;
-            qInsert(&(svars->readyQ), p);
-            qRemove(&(svars->readyQ), qShortest(&(svars->readyQ))); // how do i get the index of the CURRENT process to remove it?
+        //     p->requeued = true;
+        //     qInsert(&(svars->readyQ), p);
+        //     qRemove(&(svars->readyQ), qShortest(&(svars->readyQ))); // how do i get the index of the CURRENT process to remove it?
         
-            pthread_mutex_unlock(&(svars->readyQLock));
-        }
+        //     pthread_mutex_unlock(&(svars->readyQLock));
+        // }
 
         // ── Sync point 2: signal main that this CPU is done ─────────────
         // main() waits on mainSem once per CPU per tick.  Posting here
