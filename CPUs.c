@@ -280,9 +280,9 @@ void* RRcpu(void* param) {
         // selected above), burn one unit of its remaining CPU burst.
         if (p != NULL) {
             p->burstRemaining--;
-            // svars->quantum--;
+            svars->quantum--;
             if (p->burstRemaining == 0) {
-                // Process or wuantum is done — move it to finishedQ so main can
+                // Process or quantum is done — move it to finishedQ so main can
                 // compute and print wait-time statistics at simulation end.
                 pthread_mutex_lock(&(svars->finishedQLock));
                 qInsert(&(svars->finishedQ), p);
@@ -291,6 +291,13 @@ void* RRcpu(void* param) {
                 // CPU is now idle; it will select a new process next tick.
                 p = NULL;
             }
+            if (svars->quantum == 0){
+                    pthread_mutex_lock(&(svars->finishedQLock));
+                    qInsert(&(svars->readyQ), p);
+                    pthread_mutex_unlock(&(svars->finishedQLock));
+
+                    p = NULL;
+                }
         }
 
         // ── Sync point 2: signal main that this CPU is done ─────────────
