@@ -14,7 +14,10 @@
  *          All accesses to readyQ and finishedQ are protected by their
  *          respective mutex locks.
  * ===========================================================
- * Documentation Statement: <describe any help received>
+ * Documentation Statement: Tanner Woodring suggested I had the wrong operator
+ * in my SRTF preemption conditional check so I changed it to a < and that worked.
+ * I had an issue with the grader only mismatching the "Scheduling PID X" text 
+ * and Gavin Smith told me I need that printf() line in the preemption check so it matches.
  * =========================================================== */
 
 #include <stdio.h>
@@ -231,11 +234,68 @@ void* RRcpu(void* param) {
     int threadNum = ((CpuParams*) param)->threadNumber;
     SharedVars* svars = ((CpuParams*) param)->svars;
 
-    // Process* p = NULL;  // TODO: uncomment when you implement this function
+    Process* p = NULL;  // TODO: uncomment when you implement this function
 
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
 
+        // For RR selection criteria is earliest arrival and preemption occurs after every
+        // quantum timestep. So I need check for when the process finishes, and one for when the 
+        // quantum expires as both of those things change the queue. 
+        if(p != NULL && svars->quantum == 0){
+            pthread_mutex_lock(&(svars->readyQLock));
+
+            p->requeued = true;
+            qInsert(&(svars->readyQ), p); // inserting new process at tail
+            // index 0 is head of queue which is what has been waiting longest/what is next
+            p = qRemove(&(svars->readyQ), 0);
+
+            printf("Scheduling PID %d\n", p->PID);
+            svars->quantum--;
+            pthread_mutex_unlock(&(svars->readyQLock));
+        }
+
+        if (p == NULL) {
+            // Lock readyQ before inspecting or modifying it — another CPU
+            // thread (or main inserting a new arrival) could touch it right now.
+            pthread_mutex_lock(&(svars->readyQLock));
+
+            // Index 0 = head of the list = the process that has been waiting
+            // the longest (qInsert always appends to the tail, so the head is
+            // always the oldest arrival — that is the FIFO selection rule).
+            p = qRemove(&(svars->readyQ), 0);
+
+            if (p == NULL) {
+                // readyQ was empty — CPU stays idle this tick.
+                printf("No process to schedule\n");
+            } else {
+                printf("Scheduling PID %d\n", p->PID);
+            }
+
+            pthread_mutex_unlock(&(svars->readyQLock));
+        }
+
+        // ── Execution: one unit of work ──────────────────────────────────
+        // If we have a process (carried over from a prior tick or just
+        // selected above), burn one unit of its remaining CPU burst.
+        if (p != NULL) {
+            p->burstRemaining--;
+            // svars->quantum--;
+            if (p->burstRemaining == 0) {
+                // Process or wuantum is done — move it to finishedQ so main can
+                // compute and print wait-time statistics at simulation end.
+                pthread_mutex_lock(&(svars->finishedQLock));
+                qInsert(&(svars->finishedQ), p);
+                pthread_mutex_unlock(&(svars->finishedQLock));
+
+                // CPU is now idle; it will select a new process next tick.
+                p = NULL;
+            }
+        }
+
+        // ── Sync point 2: signal main that this CPU is done ─────────────
+        // main() waits on mainSem once per CPU per tick.  Posting here
+        // tells main this CPU has finished its work for the current timestep.
         sem_post(svars->mainSem);
     }
 }
@@ -252,13 +312,7 @@ void* SRTFcpu(void* param) {
     Process* p = NULL;  // TODO: uncomment when you implement this function
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
-
-        // Need to replace this section as SRTF is preemptive and the check/select logic needs to 
-        // run every timestep, not just when idle -> what is locking strategy? 
-        
-        // check value of BR before going into null, replace (what?) if arriving BR is less than what we currently have
-        // insert process with lower BR then remove old -> how do I get index of current process to remove it b/c it has higher BR?
-        // qShortest gets index of shortest burst but I need index of the current process. 
+      
         if(p != NULL && qShortestBR(&(svars->readyQ)) < p->burstRemaining){
             pthread_mutex_lock(&(svars->readyQLock));
 
@@ -266,9 +320,10 @@ void* SRTFcpu(void* param) {
             qInsert(&(svars->readyQ), p);
             p = qRemove(&(svars->readyQ), qShortest(&(svars->readyQ))); 
 
+            printf("Scheduling PID %d\n", p->PID);
             pthread_mutex_unlock(&(svars->readyQLock));
-        }
-
+        } 
+        
         // ── Selection (only when idle) ───────────────────────────────────
         // We only enter this block when the CPU has nothing to run.
         if (p == NULL) {
@@ -324,10 +379,59 @@ void* PPcpu(void* param) {
     int threadNum = ((CpuParams*) param)->threadNumber;
     SharedVars* svars = ((CpuParams*) param)->svars;
 
-    // Process* p = NULL;  // TODO: uncomment when you implement this function
+    Process* p = NULL;  // TODO: uncomment when you implement this function
 
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
+
+        if(p != NULL && qGetPriority(&(svars->readyQ)) < p->priority){
+            pthread_mutex_lock(&(svars->readyQLock));
+
+            p->requeued = true;
+            qInsert(&(svars->readyQ), p);
+            p = qRemove(&(svars->readyQ), qPriority(&(svars->readyQ))); 
+
+            printf("Scheduling PID %d\n", p->PID);
+            pthread_mutex_unlock(&(svars->readyQLock));
+        }
+
+        if (p == NULL) {
+            // Lock readyQ before inspecting or modifying it — another CPU
+            // thread (or main inserting a new arrival) could touch it right now.
+            pthread_mutex_lock(&(svars->readyQLock));
+
+            // Index 0 = head of the list = the process that has been waiting
+            // the longest (qInsert always appends to the tail, so the head is
+            // always the oldest arrival — that is the FIFO selection rule).
+            p = qRemove(&(svars->readyQ), qPriority(&(svars->readyQ)));
+
+            if (p == NULL) {
+                // readyQ was empty — CPU stays idle this tick.
+                printf("No process to schedule\n");
+            } else {
+                printf("Scheduling PID %d\n", p->PID);
+            }
+
+            pthread_mutex_unlock(&(svars->readyQLock));
+        }
+
+        // ── Execution: one unit of work ──────────────────────────────────
+        // If we have a process (carried over from a prior tick or just
+        // selected above), burn one unit of its remaining CPU burst.
+        if (p != NULL) {
+            p->burstRemaining--;
+
+            if (p->burstRemaining == 0) {
+                // Process is done — move it to finishedQ so main can
+                // compute and print wait-time statistics at simulation end.
+                pthread_mutex_lock(&(svars->finishedQLock));
+                qInsert(&(svars->finishedQ), p);
+                pthread_mutex_unlock(&(svars->finishedQLock));
+
+                // CPU is now idle; it will select a new process next tick.
+                p = NULL;
+            }
+        }
 
         sem_post(svars->mainSem);
     }
